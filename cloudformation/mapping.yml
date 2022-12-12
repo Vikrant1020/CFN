@@ -1,0 +1,43 @@
+Parameters:
+  your_name:
+    Type: String
+    AllowedValues:
+      - Vikrant
+      - Arjit
+      - Amit
+
+  EC2type:
+    Type: String
+    Default: t2.micro
+
+
+Mappings: 
+  EnvMap: 
+    Vikrant:
+      name: AWS
+    
+    Arjit:
+      name: Azure
+
+    Amit:
+      name: GCP
+
+Resources:
+    server:   ## logical id/names to be used further
+        Type: AWS::EC2::Instance       ############ resourece type to be created 
+        Properties: 
+            ImageId: ami-0149b2da6ceec4bb0
+            InstanceType: !Ref EC2type    #### using variables 
+            Tags: 
+                - Key: Name
+                  Value: !FindInMap [EnvMap, !Ref your_name, name]
+            # SubnetId: !Ref Subnet1        ####### using other resources through there logical is/names
+            # SecurityGroupIds:
+            #     - !Ref SG
+            UserData:
+                Fn::Base64: 
+                    !Sub |
+                        #!/bin/bash
+                        apt update
+                        apt install nginx -y
+                        systemctl start nginx  

@@ -1,0 +1,59 @@
+
+####################### Variables 
+Parameters:
+    Env:
+        Type: String
+        AllowedValues:
+            - Dev
+            - Stage
+            - Prod
+
+###################### Mapping on variables selected 
+Mappings:
+    EnvMap:
+        Dev:
+            name: developingbucketigtesing
+        
+        Stage:
+            name: stagingbucketigtesing
+
+        Prod:
+            name: prodbucketigtesing
+
+##################### Conditions on variables
+Conditions:
+    CreateProdResources: !Equals [!Ref Env, Prod]
+
+##################### Resources 
+Resources:
+    S3:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: !FindInMap [EnvMap, !Ref Env, name] 
+            WebsiteConfiguration:
+                IndexDocument: index.html
+        
+    BucketPolicy:
+        Type: 'AWS::S3::BucketPolicy'
+        Condition: CreateProdResources
+        Properties:
+            PolicyDocument:
+                Id: MyPolicy
+                Version: '2012-10-17'
+                Statement:
+                - Sid: asdasd
+                  Effect: Allow
+                  Principal: '*'
+                  Action: 's3:*'
+                  Resource: !Join 
+                    - ''
+                    - - 'arn:aws:s3:::'
+                      - !Ref S3
+                      - /*
+            Bucket: !Ref S3
+             
+################### Output 
+Outputs:
+  S3BucketSecureURL:
+    Value: !GetAtt S3.WebsiteURL
+    Description: Domain name

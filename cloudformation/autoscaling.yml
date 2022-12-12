@@ -1,0 +1,141 @@
+Parameters:
+    VPCcidr:
+        Description: Enter the CIDR value for your VPC.
+        Type: String
+        Default: "145.0.0.0/16"
+    
+    subnet1cidr:
+        Description: Enter the CIDR value for your Subnet.
+        Type: String
+        Default: "145.0.1.0/24"
+
+    subnet2cidr:
+        Description: Enter the CIDR value for your Subnet.
+        Type: String
+        Default: "145.0.2.0/24"
+
+Resources:
+
+########################## VPC ################## 
+    VPC:
+        Type: AWS::EC2::VPC
+        Properties: 
+            CidrBlock: !Ref VPCcidr
+            EnableDnsHostnames: true
+            EnableDnsSupport: true
+            Tags: 
+                - Key: Name
+                  Value: VPC
+
+    Subnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: us-east-1a
+          CidrBlock: !Ref subnet1cidr
+          MapPublicIpOnLaunch: true
+    
+    Subnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: us-east-1b
+          CidrBlock: !Ref subnet2cidr
+          MapPublicIpOnLaunch: true
+    
+    IG:
+        Type: AWS::EC2::InternetGateway
+
+    GatewayToInternet:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+          VpcId: !Ref VPC
+          InternetGatewayId: !Ref IG
+    
+    RouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
+          VpcId: !Ref VPC
+          Tags:
+            - Key: Name
+              Value: RT
+      
+    PublicRoute:
+        Type: AWS::EC2::Route
+        DependsOn: GatewayToInternet
+        Properties:
+          RouteTableId: !Ref RouteTable
+          DestinationCidrBlock: 0.0.0.0/0
+          GatewayId: !Ref IG
+     
+    PublicSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          SubnetId: !Ref Subnet1
+          RouteTableId: !Ref RouteTable
+     
+    PublicSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          SubnetId: !Ref Subnet2
+          RouteTableId: !Ref RouteTable
+
+######################### Security Group ###########################
+
+    SG:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupName: SG
+            GroupDescription: Enable SSH access and HTTP access on the inbound port
+            VpcId: !Ref VPC
+            SecurityGroupEgress: 
+                - IpProtocol: -1
+                  FromPort: 0
+                  ToPort: 0
+                  CidrIp: 0.0.0.0/0
+
+            SecurityGroupIngress: 
+                - IpProtocol: tcp
+                  FromPort: 80
+                  ToPort: 80
+                  CidrIp: 0.0.0.0/0
+                - IpProtocol: tcp
+                  FromPort: 22
+                  ToPort: 22
+                  CidrIp: 0.0.0.0/0
+            Tags: 
+                - Key: Name
+                  Value: SG
+
+############################ LaunchConfiguration for Auto scaling ########################
+    launchconf:
+        Type: AWS::AutoScaling::LaunchConfiguration
+        Properties: 
+            AssociatePublicIpAddress: true
+            ImageId: ami-0149b2da6ceec4bb0
+            InstanceType: t2.micro
+            LaunchConfigurationName: UbuntuLC
+            SecurityGroups: 
+                - !Ref SG
+            UserData:
+                Fn::Base64: 
+                    !Sub |
+                        #!/bin/bash
+                        apt update
+                        apt install nginx -y
+                        systemctl start nginx 
+
+    AutoSG:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties:
+            LaunchConfigurationName: !Ref launchconf
+            MaxSize: '3'
+            MinSize: '1'
+            DesiredCapacity: '2'
+            VPCZoneIdentifier:
+                - !Ref Subnet1
+                - !Ref Subnet2
+
+            Tags: 
+                - Key: Name
+                  Value: serverauto

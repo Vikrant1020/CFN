@@ -1,0 +1,225 @@
+
+##################### Variables for resources #################
+Parameters:
+    EC2type:
+        Description: Enter the EC2 type.
+        Type: String
+        Default: t2.micro
+    
+    VPCcidr:
+        Description: Enter the CIDR value for your VPC.
+        Type: String
+        Default: "145.0.0.0/16"
+    
+    subnet1cidr:
+        Description: Enter the CIDR value for your Subnet.
+        Type: String
+        Default: "145.0.1.0/24"
+
+    subnet2cidr:
+        Description: Enter the CIDR value for your Subnet.
+        Type: String
+        Default: "145.0.2.0/24"
+
+    servername1:
+        Description: Enter the EC2 Name.
+        Type: String
+        Default: Nginx 
+
+    servername2:
+        Description: Enter the EC2 Name.
+        Type: String
+        Default: Apache
+    
+################ Resources to be created #####################
+
+Resources:
+
+######################### EC2 instance ######################
+
+    server1:   
+        Type: AWS::EC2::Instance       
+        Properties: 
+            ImageId: ami-0149b2da6ceec4bb0
+            InstanceType: !Ref EC2type
+            Tags: 
+                - Key: Name
+                  Value: !Ref servername1
+            SubnetId: !Ref Subnet1
+            SecurityGroupIds:
+                - !Ref SG
+            UserData:
+                Fn::Base64: 
+                    !Sub |
+                        #!/bin/bash
+                        apt update
+                        apt install nginx -y
+                        systemctl start nginx    
+
+    server2:   
+        Type: AWS::EC2::Instance       
+        Properties: 
+            ImageId: ami-0149b2da6ceec4bb0
+            InstanceType: !Ref EC2type
+            Tags: 
+                - Key: Name
+                  Value: !Ref servername2
+            SubnetId: !Ref Subnet2
+            SecurityGroupIds:
+                - !Ref SG
+            UserData:
+                Fn::Base64: 
+                    !Sub |
+                        #!/bin/bash
+                        apt update
+                        apt install apache2 -y
+                        systemctl start apache2
+
+###########################  VPC  #########################
+
+    VPC:
+        Type: AWS::EC2::VPC
+        Properties: 
+            CidrBlock: !Ref VPCcidr
+            EnableDnsHostnames: true
+            EnableDnsSupport: true
+            Tags: 
+                - Key: Name
+                  Value: VPC
+
+    Subnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: us-east-1a
+          CidrBlock: !Ref subnet1cidr
+          MapPublicIpOnLaunch: true
+    
+    Subnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: us-east-1b
+          CidrBlock: !Ref subnet2cidr
+          MapPublicIpOnLaunch: true
+    
+    IG:
+        Type: AWS::EC2::InternetGateway
+
+    GatewayToInternet:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+          VpcId: !Ref VPC
+          InternetGatewayId: !Ref IG
+    
+    RouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
+          VpcId: !Ref VPC
+          Tags:
+            - Key: Name
+              Value: RT
+      
+    PublicRoute:
+        Type: AWS::EC2::Route
+        DependsOn: GatewayToInternet
+        Properties:
+          RouteTableId: !Ref RouteTable
+          DestinationCidrBlock: 0.0.0.0/0
+          GatewayId: !Ref IG
+     
+    PublicSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          SubnetId: !Ref Subnet1
+          RouteTableId: !Ref RouteTable
+     
+    PublicSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          SubnetId: !Ref Subnet2
+          RouteTableId: !Ref RouteTable
+
+######################### Security Group ###########################
+
+    SG:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupName: SG
+            GroupDescription: Enable SSH access and HTTP access on the inbound port
+            VpcId: !Ref VPC
+            SecurityGroupEgress: 
+                - IpProtocol: -1
+                  FromPort: 0
+                  ToPort: 0
+                  CidrIp: 0.0.0.0/0
+
+            SecurityGroupIngress: 
+                - IpProtocol: tcp
+                  FromPort: 80
+                  ToPort: 80
+                  CidrIp: 0.0.0.0/0
+                - IpProtocol: tcp
+                  FromPort: 22
+                  ToPort: 22
+                  CidrIp: 0.0.0.0/0
+            Tags: 
+                - Key: Name
+                  Value: SG
+    
+######################## Load balancer #########################
+
+    LoadBalancer:
+        Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+        Properties:
+            SecurityGroups:
+                - !Ref SG
+            Subnets:
+                - !Ref Subnet1
+                - !Ref Subnet2
+            Type: application
+            Tags: 
+                - Key: Name
+                  Value: CFLB
+
+    LoadBalancerListener:
+        Type: 'AWS::ElasticLoadBalancingV2::Listener'
+        Properties:
+            LoadBalancerArn: !Ref LoadBalancer
+            DefaultActions:
+                - TargetGroupArn: !Ref TG
+                  Type: forward
+            Port: 80
+            Protocol: HTTP
+
+    TG:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+            HealthCheckEnabled: true
+            HealthCheckIntervalSeconds: 10
+            HealthCheckPath: /
+            HealthCheckPort: "80"
+            HealthCheckProtocol: "HTTP"
+            HealthCheckTimeoutSeconds: 5
+            HealthyThresholdCount: 5
+            Name: TG
+            Port: 80
+            Protocol: HTTP
+            TargetType: instance
+            Targets:
+            - Id: !Ref server1
+            - Id: !Ref server2
+            VpcId: !Ref VPC
+
+################# OUTPUTS ##############
+
+Outputs:
+    server1:
+        Description: IPv4 of server1
+        Value: !GetAtt server1.PublicIp
+    server2:
+        Description: IPv4 of server1
+        Value: !GetAtt server2.PublicIp
+    LoadBalancer:
+        Description: DNS of LoadBalancer
+        Value: !GetAtt LoadBalancer.DNSName

@@ -1,0 +1,477 @@
+
+##################### Variables for resources #################
+Parameters:
+    EC2type:
+        Description: Enter the EC2 type.
+        Type: String
+        Default: t2.micro
+    
+    VPCcidr:
+        Description: Enter the CIDR value for your VPC.
+        Type: String
+        Default: "145.0.0.0/16"
+    
+    subnet1cidr:
+        Description: Enter the CIDR value for your Subnet.
+        Type: String
+        Default: "145.0.1.0/24"
+
+    subnet2cidr:
+        Description: Enter the CIDR value for your Subnet.
+        Type: String
+        Default: "145.0.2.0/24"
+
+    servername1:
+        Description: Enter the EC2 Name.
+        Type: String
+        Default: Nginx 
+    
+    s3bucket:
+        Description: Enter the S3 bucket Name.
+        Type: String
+        Default: acknwefbjbwceic
+    
+    ownername:
+        Description: Enter Git repo owner name.
+        Type: String
+        Default: Vikrant1020
+    
+    reponame:
+        Description: Enter Git repo name.
+        Type: String
+        Default: Django
+    
+    gittoken:
+        Description: Enter Git Outh Token name.
+        Type: String
+        Default: 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
+    
+    ApplicationName:
+        Description: Enter codedeploy appplication name.
+        Type: String
+        Default: Django
+    
+    DeploymentGroupName:
+        Description: Enter codedeploy deployment group name.
+        Type: String
+        Default: Django
+
+    CodeBuildProjectName:
+        Description: Enter codebuild project name.
+        Type: String
+        Default: Django
+
+################ Resources to be created #####################
+
+Resources:
+
+######################### EC2 instance ######################
+
+    server1:   
+        Type: AWS::EC2::Instance       
+        Properties: 
+            ImageId: ami-0149b2da6ceec4bb0
+            InstanceType: !Ref EC2type
+            IamInstanceProfile: !Ref InstanceRoleInstanceProfile
+            Tags: 
+                - Key: Name
+                  Value: !Ref servername1
+            SubnetId: !Ref Subnet1
+            SecurityGroupIds:
+                - !Ref SG
+            UserData:
+                Fn::Base64: 
+                    !Sub |
+                        #!/bin/bash
+                        sudo apt update -y
+                        sudo apt install ruby-full -y
+                        sudo apt install wget -y
+                        sudo wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install
+                        sudo chmod +x ./install
+                        sudo ./install auto  
+                        sudo service codedeploy-agent start
+                        sudo service codedeploy-agent restart
+                        sudo service codedeploy-agent status
+
+######################### ROLE FOR EC2 #########
+    InstanceRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                        Service:
+                        - ec2.amazonaws.com
+                      Action:
+                        - sts:AssumeRole
+            Path: /
+
+    InstanceRolePolicies:
+        Type: AWS::IAM::Policy
+        Properties:
+            PolicyName: InstanceRole
+            PolicyDocument:
+                Statement:
+                    - Effect: Allow
+                      Action:
+                        - autoscaling:Describe*
+                        - cloudformation:Describe*
+                        - cloudformation:GetTemplate
+                        - s3:Get*
+                      Resource: '*'
+            Roles:
+                - !Ref 'InstanceRole'
+
+    InstanceRoleInstanceProfile:
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            Path: /
+            Roles:
+                - !Ref 'InstanceRole'
+    
+###########################  VPC  #########################
+
+    VPC:
+        Type: AWS::EC2::VPC
+        Properties: 
+            CidrBlock: !Ref VPCcidr
+            EnableDnsHostnames: true
+            EnableDnsSupport: true
+            Tags: 
+                - Key: Name
+                  Value: VPC
+
+    Subnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: us-east-1a
+          CidrBlock: !Ref subnet1cidr
+          MapPublicIpOnLaunch: true
+    
+    Subnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: us-east-1b
+          CidrBlock: !Ref subnet2cidr
+          MapPublicIpOnLaunch: true
+    
+    IG:
+        Type: AWS::EC2::InternetGateway
+
+    GatewayToInternet:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+          VpcId: !Ref VPC
+          InternetGatewayId: !Ref IG
+    
+    RouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
+          VpcId: !Ref VPC
+          Tags:
+            - Key: Name
+              Value: RT
+      
+    PublicRoute:
+        Type: AWS::EC2::Route
+        DependsOn: GatewayToInternet
+        Properties:
+          RouteTableId: !Ref RouteTable
+          DestinationCidrBlock: 0.0.0.0/0
+          GatewayId: !Ref IG
+     
+    PublicSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          SubnetId: !Ref Subnet1
+          RouteTableId: !Ref RouteTable
+     
+    PublicSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          SubnetId: !Ref Subnet2
+          RouteTableId: !Ref RouteTable
+
+######################### Security Group ###########################
+
+    SG:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupName: SG
+            GroupDescription: Enable SSH access and HTTP access on the inbound port
+            VpcId: !Ref VPC
+            SecurityGroupEgress: 
+                - IpProtocol: -1
+                  FromPort: 0
+                  ToPort: 0
+                  CidrIp: 0.0.0.0/0
+
+            SecurityGroupIngress: 
+                - IpProtocol: tcp
+                  FromPort: 80
+                  ToPort: 80
+                  CidrIp: 0.0.0.0/0
+                - IpProtocol: tcp
+                  FromPort: 22
+                  ToPort: 22
+                  CidrIp: 0.0.0.0/0
+                - IpProtocol: tcp
+                  FromPort: 8000
+                  ToPort: 8000
+                  CidrIp: 0.0.0.0/0
+            Tags: 
+                - Key: Name
+                  Value: SG
+    
+######################## Load balancer #########################
+
+    LoadBalancer:
+        Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+        Properties:
+            SecurityGroups:
+                - !Ref SG
+            Subnets:
+                - !Ref Subnet1
+                - !Ref Subnet2
+            Type: application
+            Tags: 
+                - Key: Name
+                  Value: CFLB
+
+    LoadBalancerListener:
+        Type: 'AWS::ElasticLoadBalancingV2::Listener'
+        Properties:
+            LoadBalancerArn: !Ref LoadBalancer
+            DefaultActions:
+                - TargetGroupArn: !Ref TG
+                  Type: forward
+            Port: 80
+            Protocol: HTTP
+
+    TG:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+            HealthCheckEnabled: true
+            HealthCheckIntervalSeconds: 10
+            HealthCheckPath: /
+            HealthCheckPort: "80"
+            HealthCheckProtocol: "HTTP"
+            HealthCheckTimeoutSeconds: 5
+            HealthyThresholdCount: 5
+            Name: TG
+            Port: 80
+            Protocol: HTTP
+            TargetType: instance
+            Targets:
+            - Id: !Ref server1
+            VpcId: !Ref VPC
+
+#################### S3 ###############
+    S3:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: !Ref s3bucket 
+
+######################## POLICY FOR CODE BUILD ################# 
+    CodeBuildRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: Codebuildrole
+            AssumeRolePolicyDocument:
+                Statement:
+                - Action: ['sts:AssumeRole']
+                  Effect: Allow
+                  Principal:
+                    Service: [codebuild.amazonaws.com]
+                Version: '2012-10-17'
+            Path: /
+            Policies:
+                - PolicyName: CodeBuildAccess
+                  PolicyDocument:
+                    Version: '2012-10-17'
+                    Statement:
+                    - Effect: Allow
+                      Resource: '*' 
+                      Action:
+                        - 'logs:*'
+                        - 's3:*'
+                        - 'ec2:CreateNetworkInterface'
+                        - 'ec2:DescribeNetworkInterfaces'
+                        - 'ec2:DeleteNetworkInterface'
+                        - 'ec2:DescribeSubnets'
+                        - 'ec2:DescribeSecurityGroups'
+                        - 'ec2:DescribeDhcpOptions'
+                        - 'ec2:DescribeVpcs'
+                        - 'ec2:CreateNetworkInterfacePermission'
+                        
+
+################# code build #######################
+
+    Project:
+        Type: AWS::CodeBuild::Project
+        Properties:
+            Name: !Ref CodeBuildProjectName
+            Description: A description about my project
+            ServiceRole: !GetAtt CodeBuildRole.Arn
+            Artifacts:
+                Type: no_artifacts
+            Environment:
+                Type: LINUX_CONTAINER
+                ComputeType: BUILD_GENERAL1_SMALL
+                Image: aws/codebuild/standard:4.0
+
+            Source:
+                Location: https://github.com/Vikrant1020/Django.git
+                Type: GITHUB
+            TimeoutInMinutes: 10
+
+#################### CODE DEPLOY POLICY #####################
+    CodeDeployRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: roleCodedeployrole
+            AssumeRolePolicyDocument:
+                Statement:
+                - Action: ['sts:AssumeRole']
+                  Effect: Allow
+                  Principal:
+                    Service: [codedeploy.amazonaws.com]
+                Version: '2012-10-17'
+            Path: /
+            Policies:
+                - PolicyName: CodedeployAccess
+                  PolicyDocument:
+                    Version: '2012-10-17'
+                    Statement:
+                    - Effect: Allow
+                      Resource: '*' 
+                      Action:
+                        - 'logs:*'
+                        - 's3:*'
+                        - 'ec2:*'
+                        - autoscaling:CompleteLifecycleAction
+                        - autoscaling:DeleteLifecycleHook
+                        - autoscaling:DescribeLifecycleHooks
+                        - autoscaling:DescribeAutoScalingGroups
+                        - autoscaling:PutLifecycleHook
+                        - autoscaling:RecordLifecycleActionHeartbeat
+
+###################### CODE DEPLOY ################
+    CodeDeployApplication: 
+        Type: AWS::CodeDeploy::Application 
+        Properties:
+            ApplicationName: !Ref ApplicationName
+            ComputePlatform: Server
+    
+    DeploymentGroup: 
+        Type: AWS::CodeDeploy::DeploymentGroup 
+        Properties:
+            ApplicationName: !Ref CodeDeployApplication 
+            DeploymentGroupName: !Ref DeploymentGroupName  
+            Ec2TagFilters: 
+                - Key: Name
+                  Value: !Ref servername1
+                  Type: "KEY_AND_VALUE" 
+            ServiceRoleArn: !GetAtt CodeDeployRole.Arn
+
+############################# ROLE FOR CODE PIPELINE ############### 
+    CodePipelineRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: Codepipelinerole
+            AssumeRolePolicyDocument:
+                Statement:
+                - Action: ['sts:AssumeRole']
+                  Effect: Allow
+                  Principal:
+                    Service: [codepipeline.amazonaws.com]
+                Version: '2012-10-17'
+            Path: /
+            Policies:
+                - PolicyName: CodePipelineAccess
+                  PolicyDocument:
+                    Version: '2012-10-17'
+                    Statement:
+                    - Effect: Allow
+                      Resource: 'arn:aws:s3:::*/*' 
+                      Action:
+                        - 's3:*'
+                    - Effect: Allow
+                      Resource: '*' 
+                      Action:
+                        - 'codebuild:*'
+                        - 'codedeploy:*'
+            
+
+#########################  CODE PIPELINE ######################### 
+    AppPipeline: 
+        Type: AWS::CodePipeline::Pipeline 
+        Properties: 
+            RoleArn: !GetAtt CodePipelineRole.Arn
+            ArtifactStore:
+                Type: S3
+                Location: !Ref s3bucket
+            Stages: 
+            -   Name: Source 
+                Actions: 
+                -   Name: Source
+                    ActionTypeId: 
+                        Category: Source 
+                        Owner: ThirdParty 
+                        Version: 1 
+                        Provider: GitHub
+                    OutputArtifacts: 
+                        - Name: SourceOutput 
+                    Configuration:
+                        Owner: !Ref ownername
+                        Repo: !Ref reponame
+                        PollForSourceChanges: false
+                        Branch: master
+                        OAuthToken: !Ref gittoken
+            
+            -   Name: Build
+                Actions:
+                -   Name: Build
+                    ActionTypeId:
+                        Category: Build
+                        Owner: AWS
+                        Version: '1'
+                        Provider: CodeBuild
+                    Configuration: 
+                        ProjectName: !Ref CodeBuildProjectName
+                    InputArtifacts:
+                        - Name: SourceOutput
+                    OutputArtifacts:
+                        - Name: BuildOutput
+                    RunOrder: 1
+
+            -   Name: Deploy
+                Actions: 
+                -   Name: deploy
+                    InputArtifacts: 
+                    -   Name: BuildOutput 
+                    ActionTypeId: 
+                        Category: Deploy 
+                        Owner: AWS 
+                        Version: 1 
+                        Provider: CodeDeploy
+                    Configuration: 
+                        ApplicationName: !Ref ApplicationName 
+                        DeploymentGroupName: !Ref DeploymentGroupName
+                    RunOrder: 1 
+
+        
+
+################# OUTPUTS ##############
+
+Outputs:
+    server1:
+        Description: IPv4 of server1
+        Value: !GetAtt server1.PublicIp
+
+    LoadBalancer:
+        Description: DNS of LoadBalancer
+        Value: !GetAtt LoadBalancer.DNSName

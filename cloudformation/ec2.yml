@@ -1,0 +1,135 @@
+
+##################### Variables for resources #################
+Parameters:
+    EC2type:
+        Description: Enter the EC2 type.
+        Type: String
+        Default: t2.micro
+    
+    VPCcidr:
+        Description: Enter the CIDR value for your VPC.
+        Type: String
+        Default: "145.0.0.0/16"
+    
+    EC2Name:
+        Description: Enter the EC2 Name.
+        Type: String
+        Default: server
+
+    
+################ Resources to be created #####################
+
+Resources:
+    server:   ## logical id/names to be used further
+        Type: AWS::EC2::Instance       ############ resourece type to be created 
+        Properties: 
+            ImageId: ami-0149b2da6ceec4bb0
+            InstanceType: !Ref EC2type    #### using variables 
+            Tags: 
+                - Key: Name
+                  Value: !Ref EC2Name
+            SubnetId: !Ref Subnet1        ####### using other resources through there logical is/names
+            SecurityGroupIds:
+                - !Ref SG
+            UserData:
+                Fn::Base64: 
+                    !Sub |
+                        #!/bin/bash
+                        apt update
+                        apt install nginx -y
+                        systemctl start nginx    
+                        
+    VPC:
+        Type: AWS::EC2::VPC
+        Properties: 
+            CidrBlock: !Ref VPCcidr
+            EnableDnsHostnames: true
+            EnableDnsSupport: true
+            Tags: 
+                - Key: Name
+                  Value: VPC
+
+    Subnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: us-east-1a
+          CidrBlock: 145.0.1.0/24
+          MapPublicIpOnLaunch: true
+    
+    Subnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: us-east-1b
+          CidrBlock: 145.0.2.0/24
+          MapPublicIpOnLaunch: true
+    
+    IG:
+        Type: AWS::EC2::InternetGateway
+
+    GatewayToInternet:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+          VpcId: !Ref VPC
+          InternetGatewayId: !Ref IG
+    
+    RouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
+          VpcId: !Ref VPC
+          Tags:
+            - Key: Name
+              Value: RT
+      
+    PublicRoute:
+        Type: AWS::EC2::Route
+        DependsOn: GatewayToInternet
+        Properties:
+          RouteTableId: !Ref RouteTable
+          DestinationCidrBlock: 0.0.0.0/0
+          GatewayId: !Ref IG
+     
+    PublicSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          SubnetId: !Ref Subnet1
+          RouteTableId: !Ref RouteTable
+     
+    PublicSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          SubnetId: !Ref Subnet2
+          RouteTableId: !Ref RouteTable
+
+    SG:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            GroupName: SG
+            GroupDescription: Enable SSH access and HTTP access on the inbound port
+            VpcId: !Ref VPC
+            SecurityGroupEgress: 
+                - IpProtocol: -1
+                  FromPort: 0
+                  ToPort: 0
+                  CidrIp: 0.0.0.0/0
+
+            SecurityGroupIngress: 
+                - IpProtocol: tcp
+                  FromPort: 80
+                  ToPort: 80
+                  CidrIp: 0.0.0.0/0
+                - IpProtocol: tcp
+                  FromPort: 22
+                  ToPort: 22
+                  CidrIp: 0.0.0.0/0
+            Tags: 
+                - Key: Name
+                  Value: SG
+
+################# OUTPUTS ##############
+Outputs:
+    server:
+        Description: IPv4 of EC2
+        Value: !GetAtt server.PublicIp
+           
