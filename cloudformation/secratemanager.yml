@@ -1,0 +1,89 @@
+Resources:
+    CodePipelineRole:
+            Type: AWS::IAM::Role
+            Properties:
+                RoleName: Codepipelinerole
+                AssumeRolePolicyDocument:
+                    Statement:
+                    - Action: ['sts:AssumeRole']
+                      Effect: Allow
+                      Principal:
+                        Service: [codepipeline.amazonaws.com]
+                    Version: '2012-10-17'
+                Path: /
+                ManagedPolicyArns:
+                    - arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS
+                    - arn:aws:iam::aws:policy/AmazonECS_FullAccess
+                Policies:
+                    - PolicyName: CodePipelineAccess
+                      PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        - Effect: Allow
+                          Resource: 'arn:aws:s3:::*/*' 
+                          Action:
+                            - 's3:*'
+                        - Effect: Allow
+                          Resource: '*' 
+                          Action:
+                            - elasticbeanstalk:*
+                            - ec2:*
+                            - elasticloadbalancing:*
+                            - autoscaling:*
+                            - cloudwatch:*
+                            - s3:*
+                            - sns:*
+                            - cloudformation:*
+                            - rds:*
+                            - sqs:*
+                            - ecs:*
+                            - codebuild:*
+                            - codedeploy:*
+                            - iam:PassRole
+                            - logs:*
+                            - codepipeline:*
+                            - cloudformation:*
+                            - cloudtrail:*
+                            - ecr:*
+    #########################  CODE PIPELINE ######################### 
+    AppPipeline: 
+        Type: AWS::CodePipeline::Pipeline 
+        Properties: 
+            Name: secrate 
+            RoleArn: !GetAtt CodePipelineRole.Arn
+            ArtifactStore:
+                Type: S3
+                Location: slack12246 
+            Stages: 
+            -   Name: Source 
+                Actions: 
+                -   Name: Source
+                    ActionTypeId: 
+                        Category: Source 
+                        Owner: ThirdParty 
+                        Version: 1 
+                        Provider: GitHub
+                    OutputArtifacts: 
+                        - Name: SourceOutput 
+                    Configuration:
+                        Owner: Vikrant1020
+                        Repo: node
+                        PollForSourceChanges: false
+                        Branch: master
+                        OAuthToken: '{{resolve:secretsmanager:git:SecretString:git_token}}'
+
+            -   Name: Build
+                Actions:
+                -   Name: Build
+                    ActionTypeId:
+                        Category: Build
+                        Owner: AWS
+                        Version: '1'
+                        Provider: CodeBuild
+                    Configuration: 
+                        ProjectName: sdfvc
+                    InputArtifacts:
+                        - Name: SourceOutput
+                    OutputArtifacts:
+                        - Name: BuildOutput
+                    RunOrder: 1
