@@ -16,12 +16,7 @@ Parameters:
         Description: Enter Git repo name.
         Type: String
         Default: master
-    
-    # gittoken:
-    #     Description: Enter Git Outh Token name.
-    #     Type: String
-    #     Default: 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
-
+        
     Env:
         Type: String
         AllowedValues:
